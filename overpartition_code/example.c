@@ -12,20 +12,33 @@
 
 
 slong power(slong x, ulong y, slong p); //modular exponentiation
-slong legendre_symbol(slong x, slong y); //for legendre symbol
+int legendre_symbol(slong x, int y); //for legendre symbol
 
 int main(void) {
 
-    int p = 3; //p = l in the paper
-    ulong sturm = 852;//sturm bound
-    ulong qlist[] = {47, 191, 239, 383, 431, 479, 719, 863, 911, 1103, 1151, 1439, 1487, 1583, 1823, 1871};// list of Q to test
-    ulong n = qlist[sizeof(qlist)/sizeof(qlist[0])-1]*qlist[sizeof(qlist)/sizeof(qlist[0])-1]*sturm;//need power series up to this bound
+	int p = 3; //p = l in the paper
+	slong sturm = 852;//sturm bound
+	slong kappa = 71;
+	slong qlist[] = {47, 191, 239, 383, 431, 479, 719, 863, 911, 1103, 1151, 1439, 1487, 1583, 1823, 1871};// list of Q to test
+	
+	/*int p = 5; //p = l in the paper*/
+	/*slong sturm = 3570;//sturm bound*/
+	/*slong kappa = 119;*/
+	/*slong qlist[] = {79, 239, 479, 719};// list of Q to test*/
+
+	/*int p = 7; //p = l in the paper*/
+	/*slong sturm = 2632;//sturm bound*/
+	/*slong kappa = 47;*/
+	/*slong qlist[] = {223, 1231};// list of Q to test*/
+	/*slong qlist[] = {223, 1231, 1567};// list of Q to test*/
+
+    slong n = qlist[sizeof(qlist)/sizeof(qlist[0])-1]*qlist[sizeof(qlist)/sizeof(qlist[0])-1]*sturm;//need power series up to this bound
     flint_printf("Largest value is %wu\n",n);
 
     //set eta(q)
     nmod_poly_t eta;
     nmod_poly_init2(eta,p,n);
-    int k = 1;
+    slong k = 1;
     nmod_poly_set_coeff_ui(eta,0,1);
     while(1) {
         int sgn = ((1-2*(k%2))+p)%p;
@@ -84,21 +97,20 @@ int main(void) {
     for(i=0;i<sizeof(qlist)/sizeof(qlist[0]);i++) {
         flint_printf("Testing %wu\n",qlist[i]);
         slong Q = qlist[i];
-        slong kappa = 71;
         slong Q1 = power(Q,(kappa-3)/2,p);
-        slong eps = legendre_symbol(p-1,p);
-        slong sgn = 1 - 2*(((kappa-1)/2)%2);
+        int eps = legendre_symbol(p-1,p);
+        int sgn = 1 - 2*(((kappa-1)/2)%2);
         slong m;
         int is_interesting=1;
         for(m=1;m <= sturm; m++) {
             if(m%p==0 || legendre_symbol(m,p) == eps)
                 continue;
             slong fact = legendre_symbol(sgn*m,Q)*Q1;
-            //do the test.  We can safely ignore the n/Q^2 part since it
+            //We can safely ignore the n/Q^2 part since it
             //is a non-integer
             if((nmod_poly_get_coeff_ui(res,Q*Q*m)+fact*nmod_poly_get_coeff_ui(res,m))%p != 0) {
                 is_interesting=0;
-                flint_printf("The value Q = %wu fails 4.4 because of %wu\n",Q,m);
+                flint_printf("The value Q = %wu fails (4.4) because of %wu\n",Q,m);
                 flint_printf("The coefficients are a(n) = %wu and a(Q^2*n) = %wu\n",
                         nmod_poly_get_coeff_ui(res,m),nmod_poly_get_coeff_ui(res,Q*Q*m));
                 break;
@@ -131,7 +143,7 @@ slong power(slong x, ulong y, slong p)
     return res; 
 } 
 
-slong legendre_symbol(slong x, slong y) {
+int legendre_symbol(slong x, int y) {
 
     if(x%y==0)
         return 0;
