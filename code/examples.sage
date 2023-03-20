@@ -181,7 +181,7 @@ ex6 = EtaQuotient({1:-4,2:10,4:-4}, desc='A004018, number of points in square la
 ex7 = EtaQuotient({24:-4})
 
 # [(p,ex7.conditionC(p)) for p in prime_range(3,10)]
-# #[(3, (False, 0)), (5, (False, 0)), (7, (True, -1))]
+# #[(3, (False, 0)), (5, (True, 1)), (7, (True, -1))]
 
 # ex7.interesting_primes(7,4000)
 # #([3023], [])

@@ -4,7 +4,7 @@ class EtaQuotient():
     '''
         INPUT:
 
-        A dictionary {r_delta:delta} satisfying that sum r_delta*delta is zero
+        A dictionary {delta:r_delta} satisfying that sum r_delta*delta is zero
         mod 24.
 
         EXAMPLES:
@@ -128,12 +128,13 @@ class EtaQuotient():
 
     def r(self,cusp):
         '''
-            Returs the parameter r_s appearing in the Fourier development of
+            Returns the parameter r_s appearing in the Fourier development of
             self at cusp. See Koblitz, p. 182.
-            Computed following Treneer's thesis.
+            Computed in terms of the vanishing order at the cusp.
         '''
-        chi = self.character()
-        return cusp_r(cusp,self._N,chi,2*self._k)
+        cusp = Cusp(cusp)
+        van = self.vanishing_order(cusp)
+        return 4*(van - integer_floor(van))
 
 
     def vanishing_order(self,cusp):
@@ -141,6 +142,7 @@ class EtaQuotient():
             Computes the vanishing order at cusp of self. See Ono, Thm 1.65.
         '''
         N = self._N
+        cusp = Cusp(cusp)
         c = cusp_level(cusp,N)
         # Beware: Ligozat's formula works for "normalized" cusps.
         # So we cant use simply c = cusp.denominator(), as stated in Treneer's
@@ -159,48 +161,58 @@ class EtaQuotient():
                 return False
         return True
 
+    def is_cuspidal(self):
+
+        cusps_dict = self.cusps_dict()
+        for cusp in cusps_dict:
+            if self.vanishing_order(cusp) <= 0:
+                return False
+        return True
+
     def q_expansion(self,cusp,prec=10,coeff_ring=QQ):
         '''
             Letting w denote the width of the cusp, returns a Laurent series
-            qexp in q_w, an integer m and a square root rt such that the
+            qexp in q_w, r in {0,1,2,3} and an integer m and a square root rt such that the
             Fourier development of the eta quotient given by rdict at the cusp
-            cusp, up to precision prec, is given by qexp * z24**m * rt.
+            cusp, up to precision prec, is given by qexp q_w^r * z24**m * rt.
             When cusp == oo, if a coeff_ring is given, we compute the development
             in that ring (to be more efficient in terms of memory, ideally).
         '''
-        if cusp == oo:
+        assert prec >= 0
+        v = self.vanishing_order(cusp)
+        v_int = ceil(v)
+        r = self.r(cusp)
+        cusp = Cusp(cusp)
+        N = self._N
+        w = self.cusps_dict()[cusp]
+        if cusp != Cusp(oo):
+            coeff_ring = CyclotomicField(N)
+        ring = coeff_ring[['q_'+str(w)]]
+        qw = ring.0
+        rdict = self._rdict
+        if cusp == Cusp(oo):
         # in this case, we use the "native" q-expansion, which is faster
         # than the algorithm which works over arbitrary cusps.
-            ring = coeff_ring[['q']]
-            q = ring.0
+            Nprec = prec - v_int
             eta_q = 1
-            rdict = self._rdict
-            power = sum([delta * rdict[delta] for delta in rdict])
-            v = power//24
-            if prec <= v: 
-                return O(q**prec) * eta_q , 0, 1
-            Nprec = prec - v
+            # power = sum([delta * rdict[delta] for delta in rdict])
+            # v = power//24
+            if prec <= v_int:
+                return eta_q * O(qw**prec), 0, 0, 1
             for delta in rdict:
-                r = rdict[delta]
+                rd = rdict[delta]
                 ff = qexp_eta_scaled(ring, Nprec, delta) 
-                eta_q = eta_q*ff**r 
-            return q**v * eta_q, 0, 1 
+                eta_q = eta_q*ff**rd
+            return qw**v_int * eta_q, r, 0, 1
         else:
-            N = self._N
-            G = self._group
-            cusp = Cusp(cusp)
-            w = G.cusp_width(cusp)
-            v = self.vanishing_order(cusp)
-            Nprec = max([N/w*(prec-1-v) + 1,0])
-            KK = CyclotomicField(N) 
-            ring = KK[['q_'+str(w)]]
-            qw = ring.0
-            res = KK(0)
-            eta, qN_pow, z24_pow, rt = eta_quotient_at_cusp(self._rdict,cusp,Nprec)
+            Nprec = (prec-v_int+1)*N/w
+            eta, _, z24_pow, rt = eta_quotient_at_cusp(rdict,cusp,Nprec)
+            res = coeff_ring(0)
+            # qw_pow = w/N*qN_pow
             for t in range(Nprec):
                 if eta[t] != 0:
-                    res += eta[t]*qw**(w/N*(t+qN_pow))
-            return res + O(qw**prec), z24_pow,rt
+                    res += eta[t]*qw**(t*w/N)
+            return qw**v_int * res + O(qw**prec), r, z24_pow,rt
 
     def conditionC_data(self):
         '''
@@ -213,7 +225,7 @@ class EtaQuotient():
         res = {}
         cdict = self.cusps_dict()
         for cusp in cdict:
-            v = self.vanishing_order(cusp)
+            v = integer_ceil(self.vanishing_order(cusp))
             if v < 0:
                 res[cusp] = [cdict[cusp],[]]
                 sing = self.q_expansion(cusp,prec=0)[0]
@@ -337,7 +349,7 @@ class EtaQuotient():
             sturm = self.sturm_bound(l,j)
             return Qmax**e * sturm
 
-    def satisfies_congruences(self,l,L,j=1,eps=None):
+    def satisfies_congruences(self,l,L,j=1,eps=None,qexp=None):
         '''
             Gives the lists of primes Q in L which are interesting and
             potentially uninteresting, according to Theorems 1.2 and 1.3.
@@ -345,6 +357,8 @@ class EtaQuotient():
             pass the value eps.
             We assume that the Q's are good candidates (i.e., primes, equal to
             -1 mod N*l**j).
+            Optionally, we can pass the (needed coefficients) of the
+            q-expansion.
         '''
         if not eps:
             conditionC, eps = self.conditionC(l)
@@ -359,12 +373,13 @@ class EtaQuotient():
         e = k.denominator()
 
         Qmax = max(L) 
-        # We compute the q-expansion for the bigger Q in L, and use it for
-        # every other candidate.
         sturm = self.sturm_bound(l,j)
         nmax = sturm * Qmax**e
         Zl = IntegerModRing(l**j)
-        qexp = self.q_expansion(Cusp(oo),prec=nmax+1,coeff_ring=Zl)[0]
+        if not qexp:
+            # We compute the q-expansion for the bigger Q in L, and use it for
+            # every other candidate.
+            qexp = self.q_expansion(Cusp(oo),prec=nmax+1,coeff_ring=Zl)[0]
 
         def b(n):
             # this function gives the n-th coefficient of g_{l,j}, mod l**j.
@@ -394,6 +409,7 @@ class EtaQuotient():
                     return b(Q**2*n) + kronecker_symbol((-1)**((kappa-1)/2)*n,Q)*Q3*b(n) + Q2*b(n/(Q**2))
             for n in range(1,sturm+1):
                 if c(n) != 0:
+                    # Note that c(n) == 0 if l|n or kronecker_symbol(n,l) == eps
                     return False
             return True
         inter = []
@@ -405,6 +421,15 @@ class EtaQuotient():
                 uninter.append(Q)
         return inter,uninter
 
+    def candidatesQ(self,l,Qmax,j=1):
+        '''
+            Gives the list of primes Q such that Q equals -1 mod N*l**j,
+            up to Qmax.
+        '''
+        N = self._N
+        primes = prime_range(Qmax)
+        L = [Q for Q in primes if mod(Q,N*l**j) == -1]
+        return L
 
     def interesting_primes(self,l,Qmax,j=1,eps=None):
         '''
@@ -412,7 +437,7 @@ class EtaQuotient():
             up to Qmax.
         '''
         N = self._N
-        L = candidatesQ(N,l,Qmax)
+        L = self.candidatesQ(l,Qmax)
         return self.satisfies_congruences(l,L)
 
     def check(self,l,L,nmax,j=1,eps=None,Zl=True):
@@ -489,38 +514,6 @@ class EtaQuotient():
 
 ### AUXILIARY FUNCTIONS
 
-
-def cusp_r(cusp,N,chi,k):
-    '''
-        Computes the r = 0,1,2,3 appearing in the Fourier expansion of weakly
-        holomorphic modular forms of level N, character chi and weight k/2.
-        We follow Treneer's thesis, Proposition 2.8.
-    '''
-    a = cusp.numerator()
-    c = cusp.denominator()
-    h = N / gcd(c^2,N)
-    d,b,_,_ = lift_to_sl2z(c,a,1)
-    alpha = Matrix(ZZ,2,[a,b,c,d])
-    gamma = alpha * Matrix(ZZ,2,[1,h,0,1]) / alpha
-    A, B, C, D = gamma.list()
-    z = CC(I)
-    w = (d*z-b)/(-c*z+a)
-    re, im = sqrt(c*w+d) * sqrt(C*z+D) / sqrt(c*(w+h)+d)
-    j = round(re)+I*round(im)
-    if mod(D,4) == 1:
-        epsD = 1
-    else: # if mod(d,4) == 3
-        epsD = I
-    t = kronecker_symbol(C,D) / epsD * j
-    e = t**k * chi(1+a*c*h)
-    if e == 1:
-        return 0
-    if e == I:
-        return 1
-    if e == -1:
-        return 2
-    if e == -I:
-        return 3
 
 def cusp_level(cusp,N):
     '''
@@ -702,14 +695,4 @@ def eta_quotient_at_cusp(rdict, cusp, prec):
         z24_pow = z24_pow + rdict[delta]*(9*aa + bb + B/D)
         rt = rt / sqrt(D) 
     return (res + O(qN**prec),qN_pow,z24_pow,rt) 
-
-
-def candidatesQ(N,l,Qmax,j=1):
-    '''
-        Gives the list of primes Q such that Q equals -1 mod N*l**j,
-        up to Qmax.
-    '''
-    primes = prime_range(Qmax)
-    L = [Q for Q in primes if mod(Q,N*l**j) == -1]
-    return L
 
